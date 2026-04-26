@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>agentforge</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --muted: #6b7480;
+        --accent: #6cb2ff;
+        --tool: #f0a96b;
+        --err: #ff7676;
+        --text: #e6ebf2;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: grid;
+        grid-template-columns: 1fr 360px;
+      }
+      main { display: flex; flex-direction: column; padding: 1rem; gap: 0.75rem; min-width: 0; }
+      aside {
+        border-left: 1px solid #232830;
+        background: var(--panel);
+        padding: 1rem;
+        overflow-y: auto;
+      }
+      h1 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      h1 b { color: var(--text); font-weight: 700; letter-spacing: 0; text-transform: none; }
+      #out {
+        flex: 1;
+        background: var(--panel);
+        border: 1px solid #232830;
+        border-radius: 6px;
+        padding: 1rem;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .turn { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px dashed #232830; }
+      .turn:last-child { border: none; }
+      .role { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      form { display: flex; gap: 0.5rem; }
+      textarea {
+        flex: 1;
+        font: inherit;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid #232830;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        resize: vertical;
+        min-height: 60px;
+      }
+      button {
+        font: inherit;
+        background: var(--accent);
+        color: #000;
+        border: none;
+        border-radius: 6px;
+        padding: 0 1rem;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .tool { color: var(--tool); font-size: 12px; margin: 0.25rem 0; }
+      .tool b { color: var(--text); }
+      pre { white-space: pre-wrap; margin: 0; font-size: 12px; color: var(--muted); }
+      .err { color: var(--err); }
+      .meta { color: var(--muted); font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>agentforge — <b>Claude agent · streaming · tool use · prompt cache</b></h1>
+      <div id="out"></div>
+      <form id="f">
+        <textarea id="msg" placeholder="Ask about tinybus or collab-board…" autofocus></textarea>
+        <button type="submit" id="send">Send</button>
+      </form>
+    </main>
+    <aside>
+      <h1>Tool calls</h1>
+      <div id="tools"></div>
+    </aside>
+    <script>
+      const out = document.getElementById('out');
+      const tools = document.getElementById('tools');
+      const form = document.getElementById('f');
+      const msgInput = document.getElementById('msg');
+      const sendBtn = document.getElementById('send');
+
+      let sessionId = null;
+      let currentBody = null;
+
+      function appendTurn(role) {
+        const div = document.createElement('div');
+        div.className = 'turn';
+        const roleLabel = document.createElement('div');
+        roleLabel.className = 'role';
+        roleLabel.textContent = role;
+        const body = document.createElement('div');
+        body.className = 'body';
+        div.append(roleLabel, body);
+        out.appendChild(div);
+        out.scrollTop = out.scrollHeight;
+        return body;
+      }
+
+      function appendError(parent, message) {
+        const span = document.createElement('span');
+        span.className = 'err';
+        span.textContent = message;
+        parent.appendChild(span);
+      }
+
+      async function send(text) {
+        if (!text.trim()) return;
+        sendBtn.disabled = true;
+        appendTurn('user').textContent = text;
+        currentBody = appendTurn('assistant');
+
+        try {
+          const res = await fetch('/v1/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, message: text }),
+          });
+          if (!res.ok || !res.body) {
+            appendError(currentBody, `HTTP ${res.status}`);
+            return;
+          }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split('\n\n');
+            buffer = frames.pop() ?? '';
+            for (const frame of frames) {
+              const ev = parseSse(frame);
+              if (ev) handleEvent(ev);
+            }
+          }
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      function parseSse(frame) {
+        let event = 'message';
+        let data = '';
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        if (!data) return null;
+        try { return { event, data: JSON.parse(data) }; } catch { return null; }
+      }
+
+      function handleEvent({ event, data }) {
+        if (event === 'session') {
+          sessionId = data.id;
+          return;
+        }
+        if (event === 'text_delta') {
+          currentBody.append(document.createTextNode(data.text));
+          out.scrollTop = out.scrollHeight;
+          return;
+        }
+        if (event === 'tool_call') {
+          const div = document.createElement('div');
+          div.className = 'tool';
+          const name = document.createElement('b');
+          name.textContent = data.tool;
+          div.append(name, document.createTextNode('(' + JSON.stringify(data.input) + ')'));
+          tools.appendChild(div);
+          tools.scrollTop = tools.scrollHeight;
+          return;
+        }
+        if (event === 'tool_result') {
+          const pre = document.createElement('pre');
+          pre.textContent = JSON.stringify(data.output, null, 2);
+          if (!data.ok) pre.classList.add('err');
+          tools.appendChild(pre);
+          tools.scrollTop = tools.scrollHeight;
+          return;
+        }
+        if (event === 'usage') {
+          const m = document.createElement('div');
+          m.className = 'meta';
+          const cacheHit = data.usage.cache_read_input_tokens
+            ? ` (cache hit: ${data.usage.cache_read_input_tokens})`
+            : '';
+          m.textContent = `tokens in/out: ${data.usage.input_tokens}/${data.usage.output_tokens}${cacheHit}`;
+          currentBody.appendChild(m);
+        }
+        if (event === 'error') {
+          appendError(currentBody, data.message);
+        }
+      }
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = msgInput.value;
+        msgInput.value = '';
+        send(text);
+      });
+    </script>
+  </body>
+</html>
