@@ -28,6 +28,7 @@ describe('env loader', () => {
     process.env.DATABASE_URL = 'postgres://x:y@localhost:5432/z';
     delete process.env.PORT;
     delete process.env.LOG_LEVEL;
+    delete process.env.NODE_ENV;
     const env = loadEnv();
     expect(env.PORT).toBe(3000);
     expect(env.LOG_LEVEL).toBe('info');

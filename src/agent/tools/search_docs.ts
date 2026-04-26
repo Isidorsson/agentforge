@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Tool } from './types.js';
+import { defineTool } from './types.js';
 
 interface DocFixture {
   id: string;
@@ -36,7 +36,7 @@ const InputSchema = z.object({
   limit: z.number().int().positive().max(10).default(3),
 });
 
-export const searchDocsTool: Tool<z.infer<typeof InputSchema>, { results: DocFixture[] }> = {
+export const searchDocsTool = defineTool({
   name: 'search_docs',
   description:
     'Search a small local knowledge base of design notes (tinybus, collab-board, prompt caching). Returns matching documents.',
@@ -55,7 +55,7 @@ export const searchDocsTool: Tool<z.infer<typeof InputSchema>, { results: DocFix
     },
   },
 
-  async execute(input, ctx) {
+  async execute(input, ctx): Promise<{ results: DocFixture[] }> {
     const { query, limit } = input;
     const needle = query.toLowerCase();
     const scored = FIXTURES.map((doc) => {
@@ -75,4 +75,6 @@ export const searchDocsTool: Tool<z.infer<typeof InputSchema>, { results: DocFix
     ctx.log('tool.search_docs.ok', { query, hits: results.length });
     return { results };
   },
-};
+});
+
+export type SearchDocsInput = z.infer<typeof InputSchema>;

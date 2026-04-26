@@ -4,15 +4,25 @@ import { searchDocsTool } from '../src/agent/tools/search_docs.js';
 
 const ctx = { log: () => undefined };
 
+interface SearchResult {
+  results: Array<{ id: string; title: string; body: string }>;
+}
+
 describe('search_docs tool', () => {
   it('finds tinybus design notes by keyword', async () => {
-    const result = await searchDocsTool.execute({ query: 'tinybus skip locked', limit: 3 }, ctx);
+    const result = (await searchDocsTool.execute(
+      { query: 'tinybus skip locked', limit: 3 },
+      ctx,
+    )) as SearchResult;
     expect(result.results.length).toBeGreaterThan(0);
     expect(result.results[0]?.id).toBe('tinybus-design');
   });
 
   it('returns empty results for unrelated query', async () => {
-    const result = await searchDocsTool.execute({ query: 'kubernetes helm chart', limit: 3 }, ctx);
+    const result = (await searchDocsTool.execute(
+      { query: 'kubernetes helm chart', limit: 3 },
+      ctx,
+    )) as SearchResult;
     expect(result.results).toHaveLength(0);
   });
 
@@ -34,7 +44,6 @@ describe('fetch_url tool', () => {
       url: 'file:///etc/passwd',
       max_bytes: 1000,
     });
-    // Zod's url() accepts file://, but the executor rejects on protocol check.
     if (parsed.success) {
       return expect(fetchUrlTool.execute(parsed.data, ctx)).rejects.toThrow(/unsupported protocol/);
     }

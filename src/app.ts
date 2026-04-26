@@ -1,5 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import pinoHttp from 'pino-http';
+import { pinoHttp } from 'pino-http';
 import Anthropic from '@anthropic-ai/sdk';
 import type { Pool } from './db/pool.js';
 import type { Env } from './config/env.js';

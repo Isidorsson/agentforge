@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AgentEvent } from './events.js';
 import { buildSystemBlocks, buildToolDefinitions } from './cache.js';
 import { TOOLS_BY_NAME } from './tools/registry.js';
-import type { Tool, ToolContext } from './tools/types.js';
+import type { ToolContext } from './tools/types.js';
 
 export interface AgentRunOptions {
   anthropic: Anthropic;
@@ -122,7 +122,7 @@ async function executeOne(
   block: Anthropic.ToolUseBlock,
   ctx: ToolContext,
 ): Promise<{ ok: boolean; output: unknown }> {
-  const tool = TOOLS_BY_NAME.get(block.name) as Tool<unknown, unknown> | undefined;
+  const tool = TOOLS_BY_NAME.get(block.name);
   if (!tool) {
     ctx.log('tool.unknown', { name: block.name });
     return {

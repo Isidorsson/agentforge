@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Tool } from './types.js';
+import { defineTool } from './types.js';
 
 const InputSchema = z.object({
   url: z.string().url(),
@@ -8,7 +8,7 @@ const InputSchema = z.object({
 
 const PRIVATE_HOST_PREFIXES = ['10.', '127.', '192.168.', '172.16.', '169.254.', 'localhost'];
 
-export const fetchUrlTool: Tool<z.infer<typeof InputSchema>, { status: number; body: string }> = {
+export const fetchUrlTool = defineTool({
   name: 'fetch_url',
   description:
     'Fetch a public HTTP(S) URL and return its body as text (truncated to max_bytes). Refuses to fetch private/loopback addresses.',
@@ -30,7 +30,7 @@ export const fetchUrlTool: Tool<z.infer<typeof InputSchema>, { status: number; b
     },
   },
 
-  async execute(input, ctx) {
+  async execute(input, ctx): Promise<{ status: number; body: string }> {
     const { url, max_bytes } = input;
     const parsed = new URL(url);
 
@@ -78,4 +78,6 @@ export const fetchUrlTool: Tool<z.infer<typeof InputSchema>, { status: number; b
       clearTimeout(timeout);
     }
   },
-};
+});
+
+export type FetchUrlInput = z.infer<typeof InputSchema>;
